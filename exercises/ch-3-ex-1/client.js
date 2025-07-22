@@ -27,14 +27,12 @@ var authServer = {
  * Add the client information in here
  */
 var client = {
-	"client_id": "",
-	"client_secret": "",
+	"client_id": "oauth-client-1",
+	"client_secret": "oauth-client-secret-1",
 	"redirect_uris": ["http://localhost:9000/callback"]
 };
 
 var protectedResource = 'http://localhost:9002/resource';
-
-var state = null;
 
 var access_token = null;
 var scope = null;
@@ -48,7 +46,18 @@ app.get('/authorize', function(req, res){
 	/*
 	 * Send the user to the authorization server
 	 */
+
+	var state = randomstring.generate(16);
+
+	var authorizeUrl = buildUrl(authServer.authorizationEndpoint, {
+		client_id: client.client_id,
+		response_type: 'code',
+		redirect_uri: client.redirect_uris[0],
+		state: state
+	});
 	
+	console.log("redirecting to: " + authorizeUrl);
+	res.redirect(authorizeUrl);
 });
 
 app.get('/callback', function(req, res){
