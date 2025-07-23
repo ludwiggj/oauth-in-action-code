@@ -38,13 +38,12 @@
 
       <div class="jumbotron">
 		  <p>Access token value: <span class="label label-danger"><%- access_token ? access_token : 'NONE' %></span></p>
+      <p>Scope: <span class="label label-danger"><%- scope ? scope : 'NONE' %></span></p>
 		  <a class="btn btn-default" href="/authorize">Get OAuth Token</a> 
 		  <a class="btn btn-default" href="/fetch_resource">Get Protected Resource</a> 
       </div>
 
     </div><!-- /.container -->
-
-	
 	
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
