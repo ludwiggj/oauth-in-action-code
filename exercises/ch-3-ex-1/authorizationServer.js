@@ -59,9 +59,11 @@ app.get("/authorize", function(req, res){
 		res.render('error', {error: 'Invalid redirect URI'});
 		return;
 	} else {
-		
 		var rscope = req.query.scope ? req.query.scope.split(' ') : undefined;
 		var cscope = client.scope ? client.scope.split(' ') : undefined;
+
+        console.log('Client %s requesting authorisation with scope %s', req.query.client_id, rscope);
+
 		if (__.difference(rscope, cscope).length > 0) {
 			// client asked for a scope it couldn't have
 			var urlParsed = url.parse(req.query.redirect_uri);
@@ -74,14 +76,19 @@ app.get("/authorize", function(req, res){
 		
 		var reqid = randomstring.generate(8);
 		
+		// Store the original request, as we'll need it later once it's approved
 		requests[reqid] = req.query;
 		
+		console.log('Stored request %s', req.query)
+        console.log('Rendering approval page');
+
 		res.render('approve', {client: client, reqid: reqid, scope: rscope});
 		return;
 	}
 
 });
 
+// This endpoint handles the approval
 app.post('/approve', function(req, res) {
 
 	var reqid = req.body.reqid;
@@ -94,6 +101,7 @@ app.post('/approve', function(req, res) {
 		return;
 	}
 	
+	// User pressed the approval button
 	if (req.body.approve) {
 		if (query.response_type == 'code') {
 			// user approved access
@@ -115,15 +123,21 @@ app.post('/approve', function(req, res) {
 				return;
 			}
 
+			console.log('Handling approval for request, code %s, query %s', code, query)
+
 			// save the code and request for later
 			codes[code] = { authorizationEndpointRequest: query, scope: scope, user: user };
+
+			// console.log('Saved request for code %s, %s', code, codes[code])
 		
 			var urlParsed =url.parse(query.redirect_uri);
 			delete urlParsed.search; // this is a weird behavior of the URL library
 			urlParsed.query = urlParsed.query || {};
 			urlParsed.query.code = code;
-			urlParsed.query.state = query.state; 
-			res.redirect(url.format(urlParsed));
+			urlParsed.query.state = query.state;
+			var redirectUrl = url.format(urlParsed)
+			console.log('Now redirecting to %s', redirectUrl)
+			res.redirect(redirectUrl);
 			return;
 		} else {
 			// we got a response type we don't understand
@@ -131,22 +145,27 @@ app.post('/approve', function(req, res) {
 			delete urlParsed.search; // this is a weird behavior of the URL library
 			urlParsed.query = urlParsed.query || {};
 			urlParsed.query.error = 'unsupported_response_type';
-			res.redirect(url.format(urlParsed));
+			var redirectUrl = url.format(urlParsed)
+			console.log('Redirecting to %s', redirectUrl)
+			res.redirect(redirectUrl);
 			return;
 		}
 	} else {
-		// user denied access
+		// user denied access - probably pressed deny button
 		var urlParsed =url.parse(query.redirect_uri);
 		delete urlParsed.search; // this is a weird behavior of the URL library
 		urlParsed.query = urlParsed.query || {};
 		urlParsed.query.error = 'access_denied';
-		res.redirect(url.format(urlParsed));
+		var redirectUrl = url.format(urlParsed)
+		console.log('Redirecting to %s', redirectUrl)
+		res.redirect(redirectUrl);
 		return;
 	}
 	
 });
 
 app.post("/token", function(req, res){
+	console.log('Token endpoint hit')
 	
 	var auth = req.headers['authorization'];
 	if (auth) {
@@ -154,6 +173,7 @@ app.post("/token", function(req, res){
 		var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64').toString().split(':');
 		var clientId = querystring.unescape(clientCredentials[0]);
 		var clientSecret = querystring.unescape(clientCredentials[1]);
+		console.log('Client %s with secret %s', clientId, clientSecret)
 	}
 	
 	// otherwise, check the post body
@@ -184,6 +204,7 @@ app.post("/token", function(req, res){
 	
 	if (req.body.grant_type == 'authorization_code') {
 		
+		// Lookup previous code
 		var code = codes[req.body.code];
 		
 		if (code) {
@@ -199,11 +220,11 @@ app.post("/token", function(req, res){
 
 				nosql.insert({ access_token: access_token, client_id: clientId, scope: cscope });
 
-				console.log('Issuing access token %s', access_token);
-				console.log('with scope %s', cscope);
+				console.log('Issuing access token %s with scope %s', access_token, cscope);
 
 				var token_response = { access_token: access_token, token_type: 'Bearer',  scope: cscope };
 
+				// Return the token with a 200 response
 				res.status(200).json(token_response);
 				console.log('Issued tokens for code %s', req.body.code);
 				
