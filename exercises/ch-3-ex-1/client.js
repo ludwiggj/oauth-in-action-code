@@ -36,6 +36,7 @@ var protectedResource = 'http://localhost:9002/resource';
 
 var access_token = null;
 var scope = null;
+var state = null;
 
 app.get('/', function (req, res) {
 	res.render('index', {access_token: access_token, scope: scope});
@@ -47,7 +48,7 @@ app.get('/authorize', function(req, res){
 	 * Send the user to the authorization server
 	 */
 
-	var state = randomstring.generate(16);
+	state = randomstring.generate(16);
 
 	var authorizeUrl = buildUrl(authServer.authorizationEndpoint, {
 		client_id: client.client_id,
@@ -61,6 +62,17 @@ app.get('/authorize', function(req, res){
 });
 
 app.get('/callback', function(req, res){
+	if (req.query.error) {
+      res.render('error', {error: req.query.error});
+	  return;
+	}
+
+	if (req.query.state != state) {
+      console.log('State DOES NOT MATCH: expected %s got %s', state, req.query.state);
+	  res.render('error', {error: 'State value did not match'});
+	  return;
+	}
+
 	var code = req.query.code;
 	var form_data = qs.stringify({
 		grant_type: 'authorization_code',
@@ -98,11 +110,34 @@ app.get('/callback', function(req, res){
 	}
 });
 
-app.get('/fetch_resource', function(req, res) {
 
-	/*
-	 * Use the access token to call the resource server
-	 */
+/*
+ * Use the access token to call the resource server
+*/
+app.get('/fetch_resource', function(req, res) {
+	if (!access_token) {
+		console.log('No access token. Try and get one');
+		res.redirect('/authorize');
+		return;
+	}
+
+	console.log('Making request with access token %s', access_token);
+
+	var headers = {
+		'Authorization': 'Bearer ' + access_token
+	};
+
+	var resource = request('POST', protectedResource, { headers: headers });
+
+	if (resource.statusCode >= 200 && resource.statusCode < 300) {
+		var body = JSON.parse(resource.getBody());
+
+		res.render('data', {resource: body});
+		return;
+	} else {
+		// error
+		res.render('error', {error: 'Server returned response code: ' + resource.statusCode});
+	}
 	
 });
 
