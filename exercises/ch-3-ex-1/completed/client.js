@@ -102,7 +102,6 @@ app.get('/callback', function(req, res){
 });
 
 app.get('/fetch_resource', function(req, res) {
-	
 	if (!access_token) {
 		res.render('error', {error: 'Missing Access Token'});
 		return;
@@ -127,8 +126,6 @@ app.get('/fetch_resource', function(req, res) {
 		res.render('error', {error: resource.statusCode});
 		return;
 	}
-	
-	
 });
 
 var buildUrl = function(base, options, hash) {
