@@ -37,6 +37,7 @@ var state = null;
 var access_token = '987tghjkiu6trfghjuytrghj';
 var scope = null;
 var refresh_token = 'j2r3oj32r23rmasd98uhjrk2o3i';
+//var refresh_token = 'DUFF';
 
 app.get('/', function (req, res) {
 	res.render('index', {access_token: access_token, scope: scope, refresh_token: refresh_token});
@@ -136,19 +137,68 @@ app.get('/fetch_resource', function(req, res) {
 		/*
 		 * Instead of always returning an error like we do here, refresh the access token if we have a refresh token
 		 */
-		console.log("resource status error code " + resource.statusCode);
-		res.render('error', {error: 'Unable to fetch resource. Status ' + resource.statusCode});
+		access_token = null;
+		if (refresh_token) {
+			refreshAccessToken(req, res);
+			return;
+		} else {
+			console.log("resource status error code " + resource.statusCode);
+			res.render('error', {error: 'Unable to fetch resource. Status ' + resource.statusCode});
+		}
 	}
-	
-	
 });
 
+// Use refresh token to get a new access token
 var refreshAccessToken = function(req, res) {
+	var form_data = qs.stringify({
+		grant_type: 'refresh_token',
+		refresh_token: refresh_token
+	});
 
-	/*
-	 * Use the refresh token to get a new access token
-	 */
+	var headers = {
+		'Content-Type': 'application/x-www-form-urlencoded',
+		'Authorization': 'Basic ' + encodeClientCredentials(client.client_id, client.client_secret)
+	};
+
+	var tokRes = request('POST', authServer.tokenEndpoint, 
+		{	
+			body: form_data,
+			headers: headers
+		}
+	);
+
+	console.log('Requesting access token using refresh token %s',refresh_token);
 	
+	if (tokRes.statusCode >= 200 && tokRes.statusCode < 300) {
+		var body = JSON.parse(tokRes.getBody());
+	
+		access_token = body.access_token;
+		console.log('Got access token: %s', access_token);
+		if (body.refresh_token) {
+			refresh_token = body.refresh_token;
+			console.log('Got refresh token: %s', refresh_token);
+		}
+		
+		scope = body.scope;
+		console.log('Got scope: %s', scope);
+
+		// In this version, user is shown the tokens again, and can see that they have a new access and refresh token
+		// User then just clicks on 'Get Protected Resource' button to access the resource
+		// res.render('index', {access_token: access_token, scope: scope, refresh_token: refresh_token});
+
+		// In this (improved) version, we just redirect to /fetch_resource, so we automatically retry the resource again,
+		// having previously got a new access and refresh token
+		res.redirect('/fetch_resource');
+		return;
+	} else {
+		refresh_token = null;
+
+		// res.render('error', {error: 'Unable to refresh the access token, server response: ' + tokRes.statusCode})
+		// return;
+
+		// Now we have nothing! So let's try and get a new access and refresh token
+        res.redirect('/authorize');
+	}
 };
 
 var buildUrl = function(base, options, hash) {
