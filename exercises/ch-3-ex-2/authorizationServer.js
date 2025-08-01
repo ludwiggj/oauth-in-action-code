@@ -122,7 +122,13 @@ app.post('/approve', function(req, res) {
 			delete urlParsed.search; // this is a weird behavior of the URL library
 			urlParsed.query = urlParsed.query || {};
 			urlParsed.query.code = code;
-			urlParsed.query.state = query.state; 
+			urlParsed.query.state = query.state;
+
+			// Add scope into redirect
+			urlParsed.query.scope = scope.join(' ');
+
+            console.log('urlParsed = %s %s', urlParsed, urlParsed.query)
+
 			res.redirect(url.format(urlParsed));
 			return;
 		} else {
