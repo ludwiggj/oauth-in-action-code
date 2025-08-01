@@ -57,27 +57,42 @@ var requireAccessToken = function(req, res, next) {
 	}
 };
 
-var aliceFavorites = {
-	'movies': ['The Multidmensional Vector', 'Space Fights', 'Jewelry Boss'],
-	'foods': ['bacon', 'pizza', 'bacon pizza'],
-	'music': ['techno', 'industrial', 'alternative']
-};
-
-var bobFavorites = {
-	'movies': ['An Unrequited Love', 'Several Shades of Turquoise', 'Think Of The Children'],
-	'foods': ['bacon', 'kale', 'gravel'],
-	'music': ['baroque', 'ukulele', 'baroque ukulele']
-};
-
 app.get('/favorites', getAccessToken, requireAccessToken, function(req, res) {
 	
 	/*
 	 * Get different user information based on the information of who approved the token
 	 */
-	
-	var unknown = {user: 'Unknown', favorites: {movies: [], foods: [], music: []}};
-	res.json(unknown);
 
+	console.log('Access token %s with scopes: %s', req.access_token, req.access_token.scope.join(' '));
+
+	if (req.access_token.user == 'alice') {
+		var favorites = {movies: [], foods: [], music: []};
+		if (__.contains(req.access_token.scope, 'movies')) {
+		  favorites.movies = ['The Multidmensional Vector', 'Space Fights', 'Jewelry Boss'];
+		}
+		if (__.contains(req.access_token.scope, 'foods')) {
+		  favorites.foods = ['bacon', 'pizza', 'bacon pizza'];
+		}
+		if (__.contains(req.access_token.scope, 'music')) {
+		  favorites.music = ['techno', 'industrial', 'alternative'];
+		}
+		res.json({user: 'Alice', favorites: favorites});
+    } else if (req.access_token.user == 'bob') {
+		var favorites = {movies: [], foods: [], music: []};
+		if (__.contains(req.access_token.scope, 'movies')) {
+		  favorites.movies = ['An Unrequited Love', 'Several Shades of Turquoise', 'Think Of The Children'];
+		}
+		if (__.contains(req.access_token.scope, 'foods')) {
+		  favorites.foods = ['bacon', 'kale', 'gravel'];
+		}
+		if (__.contains(req.access_token.scope, 'music')) {
+		  favorites.music = ['baroque', 'ukulele', 'baroque ukulele'];
+		}
+      res.json({user: 'Bob', favorites: favorites});
+    } else {
+      var unknown = {user: 'Unknown', favorites: {movies: [], foods: [], music: []}};
+      res.json(unknown);
+    }
 });
 
 var server = app.listen(9002, 'localhost', function () {
