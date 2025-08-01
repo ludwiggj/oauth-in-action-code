@@ -22,11 +22,33 @@ var resource = {
 	"description": "This data has been protected by OAuth 2.0"
 };
 
+/*
+ * Scan for an access token on the incoming request.
+ */
 var getAccessToken = function(req, res, next) {
-	/*
-	 * Scan for an access token on the incoming request.
-	 */
-	
+  var inToken = null;
+  var auth = req.headers['authorization'];
+  if (auth && auth.toLowerCase().indexOf('bearer') == 0) {
+	inToken = auth.slice('bearer '.length);
+  } else if (req.body && req.body.access_token) {
+    inToken = req.body.access_token;
+  } else if (req.query && req.query.access_token) {
+    inToken = req.query.access_token
+  }
+
+  nosql.one().make(function(builder) {
+    builder.where("access_token", inToken);
+    builder.callback(function(err, token) {
+      if (token) {
+        console.log("We found a matching token: %s", inToken);
+      } else {
+        console.log("No matching token was found.");
+      };
+      req.access_token = token;
+      next();
+      return;
+    });
+  });
 };
 
 app.options('/resource', cors());
@@ -35,11 +57,19 @@ app.options('/resource', cors());
 /*
  * Add the getAccessToken function to this handler
  */
-app.post("/resource", cors(), function(req, res){
+app.post("/resource", cors(), getAccessToken, function(req, res){
 
 	/*
 	 * Check to see if the access token was found or not
 	 */
+	if (req.access_token) {
+		res.json(resource)
+	} else {
+		res.status(401).json({
+			error: "Unauthorized",
+			error_description: "The access token was not found or is invalid."
+		});
+	}
 	
 });
 
