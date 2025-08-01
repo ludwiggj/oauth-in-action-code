@@ -31,7 +31,7 @@ var client = {
 	"client_id": "oauth-client-1",
 	"client_secret": "oauth-client-secret-1",
 	"redirect_uris": ["http://localhost:9000/callback"],
-	"scope": "fruit veggies meats"
+	"scope": "fruit veggies meats lowcarb"
 };
 
 var produceApi = 'http://localhost:9002/produce';
@@ -137,7 +137,7 @@ app.get('/produce', function(req, res) {
 		res.render('produce', {scope: scope, data: body});
 		return;
 	} else {
-		res.render('produce', {scope: scope, data: {fruits: [], veggies: [], meats: []}});
+		res.render('produce', {scope: scope, data: {fruits: [], veggies: [], meats: [], lowcarb: []}});
 		return;
 	}
 	
