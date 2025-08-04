@@ -8,6 +8,12 @@ var querystring = require('querystring');
 var __ = require('underscore');
 __.string = require('underscore.string');
 
+// Import locations and configuration
+var locations = require('./locations.js');
+var authServer = locations.authServer;
+var clients = [locations.client]; // Convert single client to array format
+var authServer_port = locations.authServer_port;
+
 var app = express();
 
 app.use(bodyParser.json());
@@ -17,25 +23,6 @@ app.engine('html', cons.underscore);
 app.set('view engine', 'html');
 app.set('views', 'files/authorizationServer');
 app.set('json spaces', 4);
-
-// authorization server information
-var authServer = {
-	authorizationEndpoint: 'http://localhost:9001/authorize',
-	tokenEndpoint: 'http://localhost:9001/token'
-};
-
-// client information
-var clients = [
-
-  /*
-   * Enter client information here
-   */
-  {
-	"client_id": "oauth-client-1",
-    "client_secret": "oauth-client-secret-1",
-    "redirect_uris": ["http://localhost:9000/callback"]
-  }
-];
 
 var codes = {};
 
@@ -47,6 +34,103 @@ var getClient = function(clientId) {
 
 app.get('/', function(req, res) {
 	res.render('index', {clients: clients, authServer: authServer});
+});
+
+// Display all access tokens by client ID
+app.get('/tokens', function(req, res) {
+	console.log('Displaying tokens page');
+	
+	// Get all tokens from the database
+	nosql.find().make(function(builder) {
+		builder.callback(function(err, allRecords) {
+			if (err) {
+				console.log('Error retrieving tokens:', err);
+				res.render('error', {error: 'Error retrieving tokens'});
+				return;
+			}
+			
+			// Filter to only get access tokens (records that have access_token field but not refresh_token field)
+			var tokens = allRecords.filter(function(record) {
+				return record.access_token && !record.refresh_token;
+			});
+			
+			var now = new Date();
+			var clientTokens = {};
+			
+			// Group tokens by client_id and add status information
+			tokens.forEach(function(token) {
+				var clientId = token.client_id || 'unknown';
+				
+				if (!clientTokens[clientId]) {
+					clientTokens[clientId] = {
+						tokens: [],
+						active_count: 0,
+						expired_count: 0,
+						total_count: 0
+					};
+				}
+				
+				// Check if token is expired
+				var isExpired = false;
+				var timeRemaining = null;
+				
+				if (token.expires_at) {
+					var expiresAt = new Date(token.expires_at);
+					isExpired = now > expiresAt;
+					
+					if (!isExpired) {
+						var diffMs = expiresAt - now;
+						var diffSecs = Math.floor(diffMs / 1000);
+						var diffMins = Math.floor(diffSecs / 60);
+						var diffHours = Math.floor(diffMins / 60);
+						
+						if (diffHours > 0) {
+							timeRemaining = diffHours + 'h ' + (diffMins % 60) + 'm ' + (diffSecs % 60) + 's';
+						} else if (diffMins > 0) {
+							timeRemaining = diffMins + 'm ' + (diffSecs % 60) + 's';
+						} else {
+							timeRemaining = diffSecs + 's';
+						}
+					}
+				}
+				
+				// Add formatted dates and status
+				var tokenInfo = {
+					access_token: token.access_token,
+					client_id: token.client_id,
+					expires_at: token.expires_at ? new Date(token.expires_at).toLocaleString() : null,
+					issued_at: token.issued_at ? new Date(token.issued_at).toLocaleString() : null,
+					is_expired: isExpired,
+					time_remaining: timeRemaining
+				};
+				
+				clientTokens[clientId].tokens.push(tokenInfo);
+				clientTokens[clientId].total_count++;
+				
+				if (isExpired) {
+					clientTokens[clientId].expired_count++;
+				} else {
+					clientTokens[clientId].active_count++;
+				}
+			});
+			
+			// Sort tokens by expiration date within each client
+			Object.keys(clientTokens).forEach(function(clientId) {
+				clientTokens[clientId].tokens.sort(function(a, b) {
+					if (!a.expires_at && !b.expires_at) return 0;
+					if (!a.expires_at) return 1;
+					if (!b.expires_at) return -1;
+					return new Date(a.expires_at) - new Date(b.expires_at);
+				});
+			});
+			
+			res.render('tokens', {
+				tokens: tokens,
+				clientTokens: clientTokens,
+				now: now.toLocaleString()
+			});
+		});
+	});
 });
 
 // Process the request, validate the client, and send the user to the approval page
@@ -113,16 +197,18 @@ app.post('/approve', function(req, res) {
 var createTokenResponse = function(clientId, existing_refresh_token) {
 	// Access token is opaque in this example, but could be a JWT or other format.
 	var access_token = randomstring.generate();
-	var expires_in = 30; // 30 seconds
-	var expires_at = new Date(Date.now() + expires_in * 1000); // expiration timestamp
+	var expires_in = 30;
+	var issued_at = new Date(); // current timestamp
+	var expires_at = new Date(issued_at.getTime() + expires_in * 1000); // expiration timestamp
 				
 	nosql.insert({ 
 		access_token: access_token, 
 		client_id: clientId,
+		issued_at: issued_at,
 		expires_at: expires_at
 	});
-
-	console.log('Issuing access token %s, expires at %s', access_token, expires_at);
+	
+	console.log('Issuing access token %s, issued at %s, expires at %s', access_token, issued_at, expires_at);
 
 	var refresh_token = existing_refresh_token;
 	if (!refresh_token) {
@@ -264,7 +350,7 @@ app.use('/', express.static('files/authorizationServer'));
 // clear the database
 nosql.clear();
 
-var server = app.listen(9001, 'localhost', function () {
+var server = app.listen(authServer_port, 'localhost', function () {
   var host = server.address().address;
   var port = server.address().port;
 

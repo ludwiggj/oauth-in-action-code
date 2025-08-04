@@ -43,7 +43,7 @@
 			  <li><b>client_id:</b> <code><%- client.client_id %></code></li>
 			  <li><b>client_secret:</b> <code><%- client.client_secret %></code></li>
 			  <li><b>scope:</b> <code><%- client.scope %></code></li>
-			  <li><b>redirect_uri:</b> <code><%- client.redirect_uri %></code></li>
+			  <li><b>redirect_uri:</b> <code><%- client.redirect_uris[0] %></code></li>
 		   </ul>
 		   <% }); %>
 		   <h2>Server information:</h2>
@@ -53,10 +53,18 @@
 		   </ul>
       </div>
 
+      <div class="panel panel-info">
+        <div class="panel-heading">
+          <h3 class="panel-title">Administration</h3>
+        </div>
+        <div class="panel-body">
+          <p>View and manage access tokens issued by this authorization server.</p>
+          <a href="/tokens" class="btn btn-primary">View All Access Tokens</a>
+        </div>
+      </div>
+
     </div><!-- /.container -->
 
-	
-	
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
     <!-- Include all compiled plugins (below), or include individual files as needed -->

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+    <title>OAuth in Action: Access Tokens</title>
+
+    <!-- Bootstrap -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+	<style>
+	body {
+	  padding-top: 60px;
+	}
+	.navbar-inverse {
+		background-color: #322;
+	}
+	.token-expired {
+		color: #d9534f;
+		font-weight: bold;
+	}
+	.token-active {
+		color: #5cb85c;
+		font-weight: bold;
+	}
+	</style>
+    <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+
+    <nav class="navbar navbar-inverse navbar-fixed-top">
+      <div class="container">
+        <div class="navbar-header">
+          <a class="navbar-brand" href="/">OAuth in Action: <span class="label label-danger">OAuth Authorization Server</span></a>
+        </div>
+        <div class="navbar-collapse">
+          <ul class="navbar-nav navbar-right">
+            <li><a href="/" class="navbar-link">Home</a></li>
+            <li><a href="/tokens" class="navbar-link">View Tokens</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container">
+
+      <div class="jumbotron">
+        <h2>Access Tokens by Client</h2>
+        <p>This page shows all access tokens allocated to each client ID, including their expiration status.</p>
+      </div>
+
+      <% if (tokens.length === 0) { %>
+        <div class="alert alert-info">
+          <h4>No tokens found</h4>
+          <p>No access tokens have been issued yet.</p>
+        </div>
+      <% } else { %>
+        <% _.each(clientTokens, function(clientData, clientId) { %>
+          <div class="panel panel-primary">
+            <div class="panel-heading">
+              <h3 class="panel-title">Client ID: <code><%- clientId %></code></h3>
+            </div>
+            <div class="panel-body">
+              <% if (clientData.tokens.length === 0) { %>
+                <p class="text-muted">No tokens for this client.</p>
+              <% } else { %>
+                <div class="table-responsive">
+                  <table class="table table-striped">
+                    <thead>
+                      <tr>
+                        <th>Token</th>
+                        <th>Issued At</th>
+                        <th>Expires At</th>
+                        <th>Status</th>
+                        <th>Time Remaining</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% _.each(clientData.tokens, function(token) { %>
+                        <tr>
+                          <td><code><%- token.access_token %></code></td>
+                          <td><%- token.issued_at || 'Unknown' %></td>
+                          <td><%- token.expires_at || 'Never' %></td>
+                          <td>
+                            <% if (token.is_expired) { %>
+                              <span class="token-expired">EXPIRED</span>
+                            <% } else { %>
+                              <span class="token-active">ACTIVE</span>
+                            <% } %>
+                          </td>
+                          <td>
+                            <% if (token.is_expired) { %>
+                              <span class="text-muted">Expired</span>
+                            <% } else if (token.time_remaining) { %>
+                              <%- token.time_remaining %>
+                            <% } else { %>
+                              <span class="text-muted">Never expires</span>
+                            <% } %>
+                          </td>
+                        </tr>
+                      <% }); %>
+                    </tbody>
+                  </table>
+                </div>
+                
+                <div class="row">
+                  <div class="col-md-6">
+                    <h5>Summary:</h5>
+                    <ul>
+                      <li>Active tokens: <span class="token-active"><%- clientData.active_count %></span></li>
+                      <li>Expired tokens: <span class="token-expired"><%- clientData.expired_count %></span></li>
+                      <li>Total tokens: <%- clientData.total_count %></li>
+                    </ul>
+                  </div>
+                </div>
+              <% } %>
+            </div>
+          </div>
+        <% }); %>
+      <% } %>
+
+      <div class="panel panel-info">
+        <div class="panel-heading">
+          <h3 class="panel-title">Actions</h3>
+        </div>
+        <div class="panel-body">
+          <a href="/tokens" class="btn btn-primary">Refresh</a>
+          <a href="/" class="btn btn-default">Back to Home</a>
+        </div>
+      </div>
+
+    </div><!-- /.container -->
+
+    <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <!-- Include all compiled plugins (below), or include individual files as needed -->
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+  </body>
+</html>

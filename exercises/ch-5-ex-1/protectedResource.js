@@ -4,6 +4,10 @@ var cons = require('consolidate');
 var nosql = require('nosql').load('database.nosql');
 var cors = require('cors');
 
+// Import locations and configuration
+var locations = require('./locations.js');
+var resource_port = locations.resource_port;
+
 var app = express();
 
 app.use(bodyParser.urlencoded({ extended: true })); // support form-encoded bodies (for bearer tokens)
@@ -85,7 +89,7 @@ app.post("/resource", cors(), getAccessToken, function(req, res){
 	
 });
 
-var server = app.listen(9002, 'localhost', function () {
+var server = app.listen(resource_port, 'localhost', function () {
   var host = server.address().address;
   var port = server.address().port;
 

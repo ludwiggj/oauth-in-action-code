@@ -7,6 +7,13 @@ var querystring = require('querystring');
 var cons = require('consolidate');
 var randomstring = require("randomstring");
 
+// Import locations and configuration
+var locations = require('./locations.js');
+var client = locations.client;
+var authServer = locations.authServer;
+var protectedResource = locations.protectedResource;
+var client_port = locations.client_port;
+
 var app = express();
 
 app.use(bodyParser.json());
@@ -15,28 +22,6 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.engine('html', cons.underscore);
 app.set('view engine', 'html');
 app.set('views', 'files/client');
-
-// authorization server information
-var authServer = {
-	authorizationEndpoint: 'http://localhost:9001/authorize',
-	tokenEndpoint: 'http://localhost:9001/token',
-	revocationEndpoint: 'http://localhost:9001/revoke',
-	registrationEndpoint: 'http://localhost:9001/register',
-	userInfoEndpoint: 'http://localhost:9001/userinfo'
-};
-
-// client information
-
-var client = {
-	"client_id": "oauth-client-1",
-	"client_secret": "oauth-client-secret-1",
-	"redirect_uris": ["http://localhost:9000/callback"],
-	"scope": ""
-};
-
-//var client = {};
-
-var protectedResource = 'http://localhost:9002/resource';
 
 var state = null;
 
@@ -49,7 +34,6 @@ app.get('/', function (req, res) {
 });
 
 app.get('/authorize', function(req, res){
-
 	access_token = null;
 	refresh_token = null;
 	scope = null;
@@ -225,7 +209,7 @@ app.get('/fetch_resource', function(req, res) {
 
 app.use('/', express.static('files/client'));
 
-var server = app.listen(9000, 'localhost', function () {
+var server = app.listen(client_port, 'localhost', function () {
   var host = server.address().address;
   var port = server.address().port;
   console.log('OAuth Client is listening at http://%s:%s', host, port);
