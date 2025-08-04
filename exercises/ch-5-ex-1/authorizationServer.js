@@ -133,6 +133,40 @@ app.get('/tokens', function(req, res) {
 	});
 });
 
+// Delete a specific access token
+app.post('/delete-token', function(req, res) {
+	var accessToken = req.body.access_token;
+	
+	if (!accessToken) {
+		console.log('No access token provided for deletion');
+		res.status(400).json({error: 'Missing access token'});
+		return;
+	}
+	
+	console.log('Deleting access token: %s', accessToken);
+	
+	// Remove the token from the database
+	nosql.remove().make(function(builder) {
+		builder.where('access_token', accessToken);
+		builder.callback(function(err, count) {
+			if (err) {
+				console.log('Error deleting token:', err);
+				res.status(500).json({error: 'Failed to delete token'});
+				return;
+			}
+			
+			if (count > 0) {
+				console.log('Successfully deleted %d token(s)', count);
+			} else {
+				console.log('No token found to delete');
+			}
+			
+			// Redirect back to the tokens page to show updated state
+			res.redirect('/tokens');
+		});
+	});
+});
+
 // Process the request, validate the client, and send the user to the approval page
 app.get("/authorize", function(req, res){
 	var client = getClient(req.query.client_id);
