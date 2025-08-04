@@ -155,11 +155,22 @@ app.post("/token", function(req, res){
 				// Generate an access token and store it so that we can look it up later.
 				// Access token is opaque in this example, but could be a JWT or other format.
 				var access_token = randomstring.generate();
-				nosql.insert({ access_token: access_token, client_id: clientId }); // not storing scopes in this case (compare to ch 4 ex 4 example)
+				var expires_in = 30; // 30 seconds
+				var expires_at = new Date(Date.now() + expires_in * 1000); // expiration timestamp
+				
+				nosql.insert({ 
+					access_token: access_token, 
+					client_id: clientId,
+					expires_at: expires_at
+				});
 
-				console.log('Issuing access token %s', access_token);
+				console.log('Issuing access token %s, expires at %s', access_token, expires_at);
 
-				var token_response = { access_token: access_token, token_type: 'Bearer' };
+				var token_response = { 
+					access_token: access_token, 
+					token_type: 'Bearer',
+					expires_in: expires_in
+				};
 				res.status(200).json(token_response);
 
 				console.log('Issued tokens for code %s', req.body.code);

@@ -115,6 +115,10 @@ app.get("/callback", function(req, res){
 			console.log('Got refresh token: %s', refresh_token);
 		}
 		
+		if (body.expires_in) {
+			console.log('Access token expires in %s seconds', body.expires_in);
+		}
+		
 		scope = body.scope;
 		console.log('Got scope: %s', scope);
 
@@ -151,6 +155,11 @@ var refreshAccessToken = function(req, res) {
 			refresh_token = body.refresh_token;
 			console.log('Got refresh token: %s', refresh_token);
 		}
+		
+		if (body.expires_in) {
+			console.log('Access token expires in %s seconds', body.expires_in);
+		}
+		
 		scope = body.scope;
 		console.log('Got scope: %s', scope);
 	

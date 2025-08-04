@@ -1,0 +1,28 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start OAuth Services (ch-5-ex-1)",
+			"type": "shell",
+			"command": "echo 'To test the token expiration implementation:'",
+			"args": [
+				"&&",
+				"echo",
+				"'1. Start Authorization Server: cd exercises/ch-5-ex-1 && node authorizationServer.js'",
+				"&&",
+				"echo",
+				"'2. Start Protected Resource: cd exercises/ch-5-ex-1 && node protectedResource.js'",
+				"&&",
+				"echo",
+				"'3. Start Client: cd exercises/ch-5-ex-1 && node client.js'",
+				"&&",
+				"echo",
+				"'4. Visit http://localhost:9000 to test the flow'",
+				"&&",
+				"echo",
+				"'5. Tokens will expire in 5 minutes (300 seconds)'"
+			],
+			"group": "build"
+		}
+	]
+}

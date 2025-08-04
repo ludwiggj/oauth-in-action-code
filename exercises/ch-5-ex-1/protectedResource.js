@@ -40,10 +40,25 @@ var getAccessToken = function(req, res, next) {
 	  builder.callback(function(err, token) {
 	    if (token) {
 	      console.log("We found a matching token: %s", inToken);
+	      
+	      // Check if token has expired
+	      if (token.expires_at && new Date() > new Date(token.expires_at)) {
+	        console.log('Token %s has expired at %s', inToken, token.expires_at);
+	        // Remove expired token from database
+	        nosql.remove().make(function(builder) {
+	          builder.where('access_token', inToken);
+	          builder.callback(function(err) {
+	            if (err) console.log('Error removing expired token:', err);
+	          });
+	        });
+	        req.access_token = null;
+	      } else {
+	        req.access_token = token;
+	      }
 	    } else {
 	      console.log('No matching token was found.');
+	      req.access_token = null;
 	    };
-	    req.access_token = token;
 	    next();
 	    return;
 	  });
