@@ -109,6 +109,44 @@ app.post('/approve', function(req, res) {
 	}
 });
 
+// Generate an access token and store it so that we can look it up later.
+var createTokenResponse = function(clientId, existing_refresh_token) {
+	// Access token is opaque in this example, but could be a JWT or other format.
+	var access_token = randomstring.generate();
+	var expires_in = 30; // 30 seconds
+	var expires_at = new Date(Date.now() + expires_in * 1000); // expiration timestamp
+				
+	nosql.insert({ 
+		access_token: access_token, 
+		client_id: clientId,
+		expires_at: expires_at
+	});
+
+	console.log('Issuing access token %s, expires at %s', access_token, expires_at);
+
+	var refresh_token = existing_refresh_token;
+	if (!refresh_token) {
+		// Generate a new refresh token if we don't have one already
+		refresh_token = randomstring.generate();
+		nosql.insert({ refresh_token: refresh_token, client_id: clientId });
+
+		console.log('Issuing refresh token %s', refresh_token);
+	} else {
+		console.log('Reusing existing refresh token %s', refresh_token);
+	}
+	
+	var token_response = { 
+		access_token: access_token, 
+		token_type: 'Bearer',
+		expires_in: expires_in,
+		refresh_token: refresh_token
+	};
+	
+	console.log('Issued access token %s with refresh token %s', access_token, refresh_token);
+
+	return token_response
+}
+
 // Process the request, issue an access token
 app.post("/token", function(req, res){
 	var auth = req.headers['authorization'];
@@ -152,28 +190,10 @@ app.post("/token", function(req, res){
 			// should be considered lost.
 			delete codes[req.body.code]; // burn our code, it's been used
 			if (code.request.client_id == clientId) {
-				// Generate an access token and store it so that we can look it up later.
-				// Access token is opaque in this example, but could be a JWT or other format.
-				var access_token = randomstring.generate();
-				var expires_in = 30; // 30 seconds
-				var expires_at = new Date(Date.now() + expires_in * 1000); // expiration timestamp
-				
-				nosql.insert({ 
-					access_token: access_token, 
-					client_id: clientId,
-					expires_at: expires_at
-				});
-
-				console.log('Issuing access token %s, expires at %s', access_token, expires_at);
-
-				var token_response = { 
-					access_token: access_token, 
-					token_type: 'Bearer',
-					expires_in: expires_in
-				};
-				res.status(200).json(token_response);
-
+				var token_response = createTokenResponse(clientId, req.body.refresh_token);
 				console.log('Issued tokens for code %s', req.body.code);
+
+				res.status(200).json(token_response);
 				return;
 			} else {
 				// code was issued to a different client
@@ -186,7 +206,30 @@ app.post("/token", function(req, res){
 			res.status(400).json({error: 'invalid_grant'});
 			return;
 		}
-	} else {
+	} else if (req.body.grant_type == 'refresh_token') {
+		// lookup refresh token in internal database
+		nosql.one().make(function(builder) {
+			builder.where('refresh_token', req.body.refresh_token);
+			builder.callback(function(err, token) {
+				if (token) {
+					console.log("We found a matching refresh token: %s", req.body.refresh_token);
+					if (token.client_id != clientId) {
+						nosql.remove().make(function(builder) { builder.where('refresh_token', req.body.refresh_token); });
+						res.status(400).json({error: 'invalid_grant'});
+						return;
+					} else {
+						var token_response = createTokenResponse(clientId, req.body.refresh_token);
+						res.status(200).json(token_response);
+						return;
+					}
+				} else {
+					res.status(400).json({error: 'invalid_grant'});
+					return;
+				};
+			})
+		});
+	}
+	else {
 		console.log('Unknown grant type %s', req.body.grant_type);
 		res.status(400).json({error: 'unsupported_grant_type'});
 		return;

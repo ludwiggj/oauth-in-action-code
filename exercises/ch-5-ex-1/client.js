@@ -129,6 +129,7 @@ app.get("/callback", function(req, res){
 });
 
 var refreshAccessToken = function(req, res) {
+	// Authenticate via form fields this time...
 	var form_data = qs.stringify({
 				grant_type: 'refresh_token',
 				refresh_token: refresh_token,
@@ -136,16 +137,20 @@ var refreshAccessToken = function(req, res) {
 				client_secret: client.client_secret,
 				redirect_uri: client.redirect_uri
 			});
+
 	var headers = {
 		'Content-Type': 'application/x-www-form-urlencoded'
 	};
-	console.log('Refreshing token %s', refresh_token);
+
 	var tokRes = request('POST', authServer.tokenEndpoint, 
 		{	
 			body: form_data,
 			headers: headers
 		}
 	);
+
+	console.log('Requesting access token using refresh token %s',refresh_token);
+
 	if (tokRes.statusCode >= 200 && tokRes.statusCode < 300) {
 		var body = JSON.parse(tokRes.getBody());
 
@@ -163,8 +168,14 @@ var refreshAccessToken = function(req, res) {
 		scope = body.scope;
 		console.log('Got scope: %s', scope);
 	
-		// try again
-		res.render('index', {access_token: access_token, refresh_token: refresh_token, scope: scope});
+		// Following borrowed from ch-3-ex-2/client.js
+		// In this version, user is shown the tokens again, and can see that they have a new access and refresh token
+		// User then just clicks on 'Get Protected Resource' button to access the resource
+		// res.render('index', {access_token: access_token, scope: scope, refresh_token: refresh_token});
+
+		// In this (improved) version, we just redirect to /fetch_resource, so we automatically retry the resource again,
+		// having previously got a new access and refresh token
+		res.redirect('/fetch_resource');
 		return;
 	} else {
 		console.log('No refresh token, asking the user to get a new access token');
@@ -174,12 +185,11 @@ var refreshAccessToken = function(req, res) {
 };
 
 app.get('/fetch_resource', function(req, res) {
-
 	if (!access_token) {
 		res.render('error', {error: 'Missing access token.'});
 		return;
 	}
-	
+
 	console.log('Making request with access token %s', access_token);
 	
 	var headers = {
@@ -196,11 +206,21 @@ app.get('/fetch_resource', function(req, res) {
 		res.render('data', {resource: body});
 		return;
 	} else {
+		/*
+		 * Following taken from ch-3-ex-2/client.js
+		 * If we have a refresh token then refresh the access token and retry the resource request.
+		 * Only give up if that fails
+		 */
 		access_token = null;
-		res.render('error', {error: 'Server returned response code: ' + resource.statusCode});
-		return;
+		console.log('Resource request failed with status code %s', resource.statusCode);
+		if (refresh_token) {
+			refreshAccessToken(req, res);
+			return;
+		} else {
+			console.log("resource status error code " + resource.statusCode);
+			res.render('error', {error: 'Unable to fetch resource. Status ' + resource.statusCode});
+		}
 	}
-	
 });
 
 app.use('/', express.static('files/client'));

@@ -135,7 +135,8 @@ app.get('/fetch_resource', function(req, res) {
 		return;
 	} else {
 		/*
-		 * Instead of always returning an error like we do here, refresh the access token if we have a refresh token
+		 * If we have a refresh token then refresh the access token and retry the resource request.
+		 * Only give up if that fails
 		 */
 		access_token = null;
 		if (refresh_token) {
