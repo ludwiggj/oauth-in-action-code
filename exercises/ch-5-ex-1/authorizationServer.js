@@ -184,33 +184,58 @@ app.post('/delete-token', function(req, res) {
 	});
 });
 
-// Generate a new access token from a refresh token
-app.post('/generate-access-token', function(req, res) {
-	var refreshToken = req.body.refresh_token;
-	var clientId = req.body.client_id;
-	var requestedScope = req.body.scope;
+// Generate an access token and store it so that we can look it up later.
+var createAccessToken = function(clientId, scope) {
+	// Access token is opaque in this example, but could be a JWT or other format.
+	var access_token = randomstring.generate();
+	var expires_in = 30;
+	var issued_at = new Date(); // current timestamp
+	var expires_at = new Date(issued_at.getTime() + expires_in * 1000); // expiration timestamp
+				
+	nosql.insert({ 
+		access_token: access_token, 
+		client_id: clientId,
+		issued_at: issued_at,
+		expires_at: expires_at,
+		scope: scope
+	});
 	
-	if (!refreshToken) {
-		console.log('No refresh token provided');
-		res.status(400).json({error: 'Missing refresh token'});
-		return;
-	}
-	
-	console.log('Generating access token from refresh token: %s', refreshToken);
-	
-	// Find the refresh token in the database
+	console.log('Issuing access token %s, issued at %s, expires at %s', access_token, issued_at, expires_at);
+
+	return {
+		access_token: access_token,
+		token_type: 'Bearer',
+		expires_in: expires_in,
+		scope: scope.join(' ')
+	};
+}
+
+// Generate a refresh token and store it so that we can look it up later.
+var createRefreshToken = function(clientId, scope) {
+	var refresh_token = randomstring.generate();
+	nosql.insert({ refresh_token: refresh_token, client_id: clientId, scope: scope });
+
+	console.log('Issuing refresh token %s', refresh_token);
+
+	return {
+		refresh_token: refresh_token
+	};
+}
+
+// Retrieve and validate a refresh token from the database
+var getRefreshTokenFromDatabase = function(refreshToken, clientId, callback) {
 	nosql.find().make(function(builder) {
 		builder.where('refresh_token', refreshToken);
 		builder.callback(function(err, records) {
 			if (err) {
 				console.log('Error finding refresh token:', err);
-				res.status(500).json({error: 'Database error'});
+				callback({error: 'Database error'}, null);
 				return;
 			}
 			
 			if (!records || records.length === 0) {
 				console.log('Refresh token not found');
-				res.status(404).json({error: 'Refresh token not found'});
+				callback({error: 'Refresh token not found'}, null);
 				return;
 			}
 			
@@ -219,30 +244,99 @@ app.post('/generate-access-token', function(req, res) {
 			// Validate client_id matches
 			if (refreshTokenRecord.client_id !== clientId) {
 				console.log('Client ID mismatch');
-				res.status(400).json({error: 'Invalid client'});
+				nosql.remove().make(function(builder) { builder.where('refresh_token', refreshToken); });
+				callback({error: 'Invalid client'}, null);
 				return;
 			}
 			
-			// Validate requested scope is subset of original scope
-			var originalScopes = refreshTokenRecord.scope || [];
-			var requestedScopes = requestedScope ? requestedScope.split(' ') : [];
-			
-			var validScope = requestedScopes.every(function(scope) {
-				return originalScopes.indexOf(scope) !== -1;
-			});
-			
-			if (!validScope) {
-				console.log('Requested scope exceeds original scope');
-				res.status(400).json({error: 'Invalid scope'});
-				return;
-			}
-			
-			// Generate new access token
-			var token_response = createTokenResponse(clientId, refreshToken, requestedScopes);
-			
-			console.log('Generated new access token from refresh token');
-			res.json({success: true, token_response: token_response});
+			// Return the valid refresh token record
+			callback(null, refreshTokenRecord);
 		});
+	});
+}
+
+// Generate an access token from a refresh token with scope validation
+var generateAccessTokenFromRefreshToken = function(clientId, refreshToken, requestedScope, callback) {
+	if (!refreshToken) {
+		console.log('No refresh token provided');
+		callback({error: 'Missing refresh token'}, null);
+		return;
+	}
+	
+	console.log('Generating access token from refresh token: %s', refreshToken);
+	
+	// Retrieve and validate the refresh token from the database
+	getRefreshTokenFromDatabase(refreshToken, clientId, function(err, refreshTokenRecord) {
+		if (err) {
+			callback(err, null);
+			return;
+		}
+		
+		// Validate requested scope is subset of original scope
+		var originalScopes = refreshTokenRecord.scope || [];
+		var requestedScopes;
+		
+		if (requestedScope === null || requestedScope === undefined) {
+			// No scope parameter provided, use original scopes
+			requestedScopes = originalScopes;
+		} else if (requestedScope === '') {
+			// Empty scope parameter provided, use empty scope
+			requestedScopes = [];
+		} else {
+			// Specific scope parameter provided, split it
+			requestedScopes = requestedScope.split(' ');
+		}
+		
+		var validScope = requestedScopes.every(function(scope) {
+			return originalScopes.indexOf(scope) !== -1;
+		});
+		
+		if (!validScope) {
+			console.log('Requested scope exceeds original scope');
+			callback({error: 'Invalid scope'}, null);
+			return;
+		}
+		
+		// Generate new access token
+		var accessTokenResponse = createAccessToken(clientId, requestedScopes);
+		
+		// Blend with existing refresh token
+		var token_response = {
+			access_token: accessTokenResponse.access_token,
+			token_type: accessTokenResponse.token_type,
+			expires_in: accessTokenResponse.expires_in,
+			refresh_token: refreshToken,
+			scope: accessTokenResponse.scope
+		};
+		
+		console.log('Generated new access token %s from existing refresh token %s', accessTokenResponse.access_token, refreshToken);
+		callback(null, {token_response: token_response});
+	});
+}
+
+// Generate a new access token from a refresh token
+app.post('/generate-access-token', function(req, res) {
+	var refreshToken = req.body.refresh_token;
+	var clientId = req.body.client_id;
+	var requestedScope = req.body.scope;
+	
+	generateAccessTokenFromRefreshToken(clientId, refreshToken, requestedScope, function(err, result) {
+		if (err) {
+			if (err.error === 'Missing refresh token') {
+				res.status(400).json(err);
+			} else if (err.error === 'Database error') {
+				res.status(500).json(err);
+			} else if (err.error === 'Refresh token not found') {
+				res.status(404).json(err);
+			} else if (err.error === 'Invalid client' || err.error === 'Invalid scope') {
+				res.status(400).json(err);
+			} else {
+				res.status(500).json(err);
+			}
+			return;
+		}
+		
+		res.json(result);
 	});
 });
 
@@ -339,48 +433,6 @@ app.post('/approve', function(req, res) {
 	}
 });
 
-// Generate an access token and store it so that we can look it up later.
-var createTokenResponse = function(clientId, existing_refresh_token, scope) {
-	// Access token is opaque in this example, but could be a JWT or other format.
-	var access_token = randomstring.generate();
-	var expires_in = 30;
-	var issued_at = new Date(); // current timestamp
-	var expires_at = new Date(issued_at.getTime() + expires_in * 1000); // expiration timestamp
-				
-	nosql.insert({ 
-		access_token: access_token, 
-		client_id: clientId,
-		issued_at: issued_at,
-		expires_at: expires_at,
-		scope: scope
-	});
-	
-	console.log('Issuing access token %s, issued at %s, expires at %s', access_token, issued_at, expires_at);
-
-	var refresh_token = existing_refresh_token;
-	if (!refresh_token) {
-		// Generate a new refresh token if we don't have one already
-		refresh_token = randomstring.generate();
-		nosql.insert({ refresh_token: refresh_token, client_id: clientId, scope: scope });
-
-		console.log('Issuing refresh token %s', refresh_token);
-	} else {
-		console.log('Reusing existing refresh token %s', refresh_token);
-	}
-	
-	var token_response = { 
-		access_token: access_token, 
-		token_type: 'Bearer',
-		expires_in: expires_in,
-		refresh_token: refresh_token,
-		scope: scope.join(' ')
-	};
-	
-	console.log('Issued access token %s with refresh token %s', access_token, refresh_token);
-
-	return token_response
-}
-
 // Process the request, issue an access token
 app.post("/token", function(req, res){
 	var auth = req.headers['authorization'];
@@ -424,10 +476,60 @@ app.post("/token", function(req, res){
 			// should be considered lost.
 			delete codes[req.body.code]; // burn our code, it's been used
 			if (code.request.client_id == clientId) {
-				var token_response = createTokenResponse(clientId, req.body.refresh_token, code.scope);
-				console.log('Issued tokens for code %s', req.body.code);
+				// Create access token
+				var accessTokenResponse = createAccessToken(clientId, code.scope);
+				
+				// Create or reuse refresh token
+				if (req.body.refresh_token) {
+					// Validate that the refresh token exists in the database before reusing
+					console.log('Attempting to reuse existing refresh token %s', req.body.refresh_token);
+					
+					getRefreshTokenFromDatabase(req.body.refresh_token, clientId, function(err, refreshTokenRecord) {
+						var refreshTokenResponse;
+						
+						if (err) {
+							// Invalid or non-existent refresh token, create a new one
+							console.log('Invalid refresh token (%s), creating new one', err.error);
+							refreshTokenResponse = createRefreshToken(clientId, code.scope);
+						} else {
+							// Valid refresh token found, reuse it
+							console.log('Reusing validated refresh token %s', req.body.refresh_token);
+							refreshTokenResponse = { refresh_token: req.body.refresh_token };
+						}
+						
+						// Complete the token response
+						var token_response = {
+							access_token: accessTokenResponse.access_token,
+							token_type: accessTokenResponse.token_type,
+							expires_in: accessTokenResponse.expires_in,
+							refresh_token: refreshTokenResponse.refresh_token,
+							scope: accessTokenResponse.scope
+						};
+						
+						console.log('Issued tokens for code %s', req.body.code);
+						console.log('Issued access token %s with refresh token %s', accessTokenResponse.access_token, refreshTokenResponse.refresh_token);
 
-				res.status(200).json(token_response);
+						res.status(200).json(token_response);
+					});
+					return; // Exit here since we're handling the response asynchronously
+				} else {
+					// Create new refresh token
+					var refreshTokenResponse = createRefreshToken(clientId, code.scope);
+					
+					// Blend the responses
+					var token_response = {
+						access_token: accessTokenResponse.access_token,
+						token_type: accessTokenResponse.token_type,
+						expires_in: accessTokenResponse.expires_in,
+						refresh_token: refreshTokenResponse.refresh_token,
+						scope: accessTokenResponse.scope
+					};
+					
+					console.log('Issued tokens for code %s', req.body.code);
+					console.log('Issued access token %s with refresh token %s', accessTokenResponse.access_token, refreshTokenResponse.refresh_token);
+
+					res.status(200).json(token_response);
+				}
 				return;
 			} else {
 				// code was issued to a different client
@@ -441,27 +543,59 @@ app.post("/token", function(req, res){
 			return;
 		}
 	} else if (req.body.grant_type == 'refresh_token') {
-		// lookup refresh token in internal database
-		nosql.one().make(function(builder) {
-			builder.where('refresh_token', req.body.refresh_token);
-			builder.callback(function(err, token) {
-				if (token) {
-					console.log("We found a matching refresh token: %s", req.body.refresh_token);
-					if (token.client_id != clientId) {
-						nosql.remove().make(function(builder) { builder.where('refresh_token', req.body.refresh_token); });
-						res.status(400).json({error: 'invalid_grant'});
-						return;
-					} else {
-						var token_response = createTokenResponse(clientId, req.body.refresh_token, token.scope);
-						res.status(200).json(token_response);
-						return;
-					}
+		var refreshToken = req.body.refresh_token;
+		var requestedScope = null; // force called function to use scope from refresh token
+
+		generateAccessTokenFromRefreshToken(clientId, refreshToken, requestedScope, function(err, result) {
+			if (err) {
+				if (err.error === 'Missing refresh token') {
+					res.status(400).json(err);
+				} else if (err.error === 'Database error') {
+					res.status(500).json(err);
+				} else if (err.error === 'Refresh token not found') {
+					res.status(404).json(err);
+				} else if (err.error === 'Invalid client' || err.error === 'Invalid scope') {
+					res.status(400).json(err);
 				} else {
-					res.status(400).json({error: 'invalid_grant'});
-					return;
-				};
-			})
+					res.status(500).json(err);
+				}
+				return;
+			}
+			res.status(200).json(result.token_response);
 		});
+		// // lookup refresh token in internal database
+		// nosql.one().make(function(builder) {
+		// 	builder.where('refresh_token', req.body.refresh_token);
+		// 	builder.callback(function(err, token) {
+		// 		if (token) {
+		// 			console.log("We found a matching refresh token: %s", req.body.refresh_token);
+		// 			if (token.client_id != clientId) {
+		// 				nosql.remove().make(function(builder) { builder.where('refresh_token', req.body.refresh_token); });
+		// 				res.status(400).json({error: 'invalid_grant'});
+		// 				return;
+		// 			} else {
+		// 				// Create access token
+		// 				var accessTokenResponse = createAccessToken(clientId, token.scope);
+						
+		// 				// Blend with existing refresh token
+		// 				var token_response = {
+		// 					access_token: accessTokenResponse.access_token,
+		// 					token_type: accessTokenResponse.token_type,
+		// 					expires_in: accessTokenResponse.expires_in,
+		// 					refresh_token: req.body.refresh_token,
+		// 					scope: accessTokenResponse.scope
+		// 				};
+						
+		// 				console.log('Generated new access token %s with existing refresh token %s', accessTokenResponse.access_token, req.body.refresh_token);
+		// 				res.status(200).json(token_response);
+		// 				return;
+		// 			}
+		// 		} else {
+		// 			res.status(400).json({error: 'invalid_grant'});
+		// 			return;
+		// 		};
+		// 	})
+		// });
 	}
 	else {
 		console.log('Unknown grant type %s', req.body.grant_type);

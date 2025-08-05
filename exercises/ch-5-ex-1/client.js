@@ -35,7 +35,7 @@ app.get('/', function (req, res) {
 
 app.get('/authorize', function(req, res){
 	access_token = null;
-	refresh_token = null;
+	// Don't clear refresh_token - preserve it for reuse if it exists
 	scope = client.scope;
 	state = randomstring.generate();
 	
@@ -70,11 +70,18 @@ app.get("/callback", function(req, res){
 
 	var code = req.query.code;
 
-	var form_data = qs.stringify({
-				grant_type: 'authorization_code',
-				code: code,
-				redirect_uri: client.redirect_uri
-			});
+	var form_data_obj = {
+		grant_type: 'authorization_code',
+		code: code,
+		redirect_uri: client.redirect_uri
+	};
+	
+	// Include existing refresh token if available to reuse it
+	if (refresh_token) {
+		form_data_obj.refresh_token = refresh_token;
+	}
+	
+	var form_data = qs.stringify(form_data_obj);
 	var headers = {
 		'Content-Type': 'application/x-www-form-urlencoded',
 		'Authorization': 'Basic ' + Buffer.from(querystring.escape(client.client_id) + ':' + querystring.escape(client.client_secret)).toString('base64')
