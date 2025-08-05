@@ -76,6 +76,7 @@ app.get('/tokens', function(req, res) {
 				var refreshTokenInfo = {
 					refresh_token: token.refresh_token,
 					client_id: token.client_id,
+					issued_at: token.issued_at ? new Date(token.issued_at).toLocaleString() : null,
 					scope: token.scope || 'No scope'
 				};
 				
@@ -184,6 +185,40 @@ app.post('/delete-token', function(req, res) {
 	});
 });
 
+// Delete a specific refresh token
+app.post('/delete-refresh-token', function(req, res) {
+	var refreshToken = req.body.refresh_token;
+	
+	if (!refreshToken) {
+		console.log('No refresh token provided for deletion');
+		res.status(400).json({error: 'Missing refresh token'});
+		return;
+	}
+	
+	console.log('Deleting refresh token: %s', refreshToken);
+	
+	// Remove the refresh token from the database
+	nosql.remove().make(function(builder) {
+		builder.where('refresh_token', refreshToken);
+		builder.callback(function(err, count) {
+			if (err) {
+				console.log('Error deleting refresh token:', err);
+				res.status(500).json({error: 'Failed to delete refresh token'});
+				return;
+			}
+			
+			if (count > 0) {
+				console.log('Successfully deleted %d refresh token(s)', count);
+			} else {
+				console.log('No refresh token found to delete');
+			}
+			
+			// Redirect back to the tokens page to show updated state
+			res.redirect('/tokens');
+		});
+	});
+});
+
 // Generate an access token and store it so that we can look it up later.
 var createAccessToken = function(clientId, scope) {
 	// Access token is opaque in this example, but could be a JWT or other format.
@@ -197,7 +232,7 @@ var createAccessToken = function(clientId, scope) {
 		client_id: clientId,
 		issued_at: issued_at,
 		expires_at: expires_at,
-		scope: scope
+		scope: scope.join(' ')
 	});
 	
 	console.log('Issuing access token %s, issued at %s, expires at %s', access_token, issued_at, expires_at);
@@ -213,9 +248,16 @@ var createAccessToken = function(clientId, scope) {
 // Generate a refresh token and store it so that we can look it up later.
 var createRefreshToken = function(clientId, scope) {
 	var refresh_token = randomstring.generate();
-	nosql.insert({ refresh_token: refresh_token, client_id: clientId, scope: scope });
+	var issued_at = new Date(); // current timestamp
+	
+	nosql.insert({ 
+		refresh_token: refresh_token, 
+		client_id: clientId,
+		issued_at: issued_at,
+		scope: scope.join(' ')
+	});
 
-	console.log('Issuing refresh token %s', refresh_token);
+	console.log('Issuing refresh token %s, issued at %s', refresh_token, issued_at);
 
 	return {
 		refresh_token: refresh_token
@@ -273,7 +315,7 @@ var generateAccessTokenFromRefreshToken = function(clientId, refreshToken, reque
 		}
 		
 		// Validate requested scope is subset of original scope
-		var originalScopes = refreshTokenRecord.scope || [];
+		var originalScopes = refreshTokenRecord.scope ? refreshTokenRecord.scope.split(' ') : [];
 		var requestedScopes;
 		
 		if (requestedScope === null || requestedScope === undefined) {
@@ -563,39 +605,6 @@ app.post("/token", function(req, res){
 			}
 			res.status(200).json(result.token_response);
 		});
-		// // lookup refresh token in internal database
-		// nosql.one().make(function(builder) {
-		// 	builder.where('refresh_token', req.body.refresh_token);
-		// 	builder.callback(function(err, token) {
-		// 		if (token) {
-		// 			console.log("We found a matching refresh token: %s", req.body.refresh_token);
-		// 			if (token.client_id != clientId) {
-		// 				nosql.remove().make(function(builder) { builder.where('refresh_token', req.body.refresh_token); });
-		// 				res.status(400).json({error: 'invalid_grant'});
-		// 				return;
-		// 			} else {
-		// 				// Create access token
-		// 				var accessTokenResponse = createAccessToken(clientId, token.scope);
-						
-		// 				// Blend with existing refresh token
-		// 				var token_response = {
-		// 					access_token: accessTokenResponse.access_token,
-		// 					token_type: accessTokenResponse.token_type,
-		// 					expires_in: accessTokenResponse.expires_in,
-		// 					refresh_token: req.body.refresh_token,
-		// 					scope: accessTokenResponse.scope
-		// 				};
-						
-		// 				console.log('Generated new access token %s with existing refresh token %s', accessTokenResponse.access_token, req.body.refresh_token);
-		// 				res.status(200).json(token_response);
-		// 				return;
-		// 			}
-		// 		} else {
-		// 			res.status(400).json({error: 'invalid_grant'});
-		// 			return;
-		// 		};
-		// 	})
-		// });
 	}
 	else {
 		console.log('Unknown grant type %s', req.body.grant_type);

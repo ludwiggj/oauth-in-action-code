@@ -6,6 +6,7 @@ var qs = require("qs");
 var querystring = require('querystring');
 var cons = require('consolidate');
 var randomstring = require("randomstring");
+var nosql = require('nosql').load('database.nosql');
 
 // Import locations and configuration
 var locations = require('./locations.js');
@@ -49,6 +50,78 @@ app.get('/authorize', function(req, res){
 	
 	console.log("redirect", url.format(authorizeUrl));
 	res.redirect(url.format(authorizeUrl));
+});
+
+app.get('/update-tokens', function(req, res) {
+	console.log('Updating tokens from database...');
+	
+	// Get latest access token from database
+	nosql.find().make(function(builder) {
+		builder.callback(function(err, allRecords) {
+			if (err) {
+				console.log('Error retrieving tokens from database:', err);
+				res.redirect('/');
+				return;
+			}
+			
+			// Filter to get access tokens for our client
+			var accessTokens = allRecords.filter(function(record) {
+				return record.access_token && record.client_id === client.client_id;
+			});
+			
+			// Filter to get refresh tokens for our client
+			var refreshTokens = allRecords.filter(function(record) {
+				return record.refresh_token && record.client_id === client.client_id;
+			});
+			
+			// Get latest valid access token
+			var latestAccessToken = null;
+			if (accessTokens.length > 0) {
+				// Sort by issued_at (most recent first)
+				accessTokens.sort(function(a, b) {
+					var dateA = new Date(a.issued_at || 0);
+					var dateB = new Date(b.issued_at || 0);
+					return dateB - dateA;
+				});
+				
+				latestAccessToken = accessTokens[0];
+			}
+			
+			// Get latest refresh token
+			var latestRefreshToken = null;
+			if (refreshTokens.length > 0) {
+				// Sort by issued_at (most recent first)
+				refreshTokens.sort(function(a, b) {
+					var dateA = new Date(a.issued_at || 0);
+					var dateB = new Date(b.issued_at || 0);
+					return dateB - dateA;
+				});
+				
+				latestRefreshToken = refreshTokens[0];
+			}
+			
+			// Update tokens in memory
+			if (latestAccessToken) {
+				access_token = latestAccessToken.access_token;
+				scope = latestAccessToken.scope;
+				console.log('Updated access token from database: %s', access_token);
+			} else {
+				access_token = null;
+				console.log('No valid access token found in database');
+			}
+			
+			if (latestRefreshToken) {
+				refresh_token = latestRefreshToken.refresh_token;
+				console.log('Updated refresh token from database: %s', refresh_token);
+			} else {
+				refresh_token = null;
+				console.log('No refresh token found in database');
+			}
+			
+			// Redirect back to home page to show updated tokens
+			res.redirect('/');
+		});
+	});
 });
 
 app.get("/callback", function(req, res){
