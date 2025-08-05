@@ -179,12 +179,33 @@ app.get("/authorize", function(req, res){
 		res.render('error', {error: 'Invalid redirect URI'});
 		return;
 	} else {
+		var rscope = req.query.scope ? req.query.scope.split(' ') : undefined;
+		var cscope = client.scope ? client.scope.split(' ') : undefined;
+
+		if (__.difference(rscope, cscope).length > 0) {
+			var urlParsed = buildUrl(req.query.redirect_uri, {
+				error: 'invalid_scope'
+			});
+			res.redirect(urlParsed);
+			return;
+		}
 		var reqid = randomstring.generate(8);
 		requests[reqid] = req.query;
-		res.render('approve', {client: client, reqid: reqid});
+		res.render('approve', {client: client, reqid: reqid, scope: rscope});
 		return;
 	}
 });
+
+var getScopesFromForm = function(body) {
+	return __.filter(
+		__.keys(body), function(s) { 
+			return __.string.startsWith(s, 'scope_');
+		}
+	)
+	.map(function(s) {
+		return s.slice('scope_'.length); 
+	});
+};
 
 // Process the results of the approval page, authorize the client
 app.post('/approve', function(req, res) {
@@ -202,8 +223,20 @@ app.post('/approve', function(req, res) {
 	if (req.body.approve) {
 		// User approved access
 		if (query.response_type == 'code') {
+			var rscope = getScopesFromForm(req.body);
+			var client = getClient(query.client_id);
+			var cscope = client.scope ? client.scope.split(' ') : undefined;
+
+			if (__.difference(rscope, cscope).length > 0) {
+				var urlParsed = buildUrl(req.query.redirect_uri, {
+					error: 'invalid_scope'
+				});
+				res.redirect(urlParsed);
+				return;
+			}
+		
 			var code = randomstring.generate(8);
-			codes[code] = { request: query };
+			codes[code] = { request: query, scope: rscope };
 			var urlParsed = buildUrl(query.redirect_uri, {
 				code: code,
 				state: query.state
@@ -228,7 +261,7 @@ app.post('/approve', function(req, res) {
 });
 
 // Generate an access token and store it so that we can look it up later.
-var createTokenResponse = function(clientId, existing_refresh_token) {
+var createTokenResponse = function(clientId, existing_refresh_token, scope) {
 	// Access token is opaque in this example, but could be a JWT or other format.
 	var access_token = randomstring.generate();
 	var expires_in = 30;
@@ -239,7 +272,8 @@ var createTokenResponse = function(clientId, existing_refresh_token) {
 		access_token: access_token, 
 		client_id: clientId,
 		issued_at: issued_at,
-		expires_at: expires_at
+		expires_at: expires_at,
+		scope: scope
 	});
 	
 	console.log('Issuing access token %s, issued at %s, expires at %s', access_token, issued_at, expires_at);
@@ -248,7 +282,7 @@ var createTokenResponse = function(clientId, existing_refresh_token) {
 	if (!refresh_token) {
 		// Generate a new refresh token if we don't have one already
 		refresh_token = randomstring.generate();
-		nosql.insert({ refresh_token: refresh_token, client_id: clientId });
+		nosql.insert({ refresh_token: refresh_token, client_id: clientId, scope: scope });
 
 		console.log('Issuing refresh token %s', refresh_token);
 	} else {
@@ -259,7 +293,8 @@ var createTokenResponse = function(clientId, existing_refresh_token) {
 		access_token: access_token, 
 		token_type: 'Bearer',
 		expires_in: expires_in,
-		refresh_token: refresh_token
+		refresh_token: refresh_token,
+		scope: scope.join(' ')
 	};
 	
 	console.log('Issued access token %s with refresh token %s', access_token, refresh_token);
@@ -310,7 +345,7 @@ app.post("/token", function(req, res){
 			// should be considered lost.
 			delete codes[req.body.code]; // burn our code, it's been used
 			if (code.request.client_id == clientId) {
-				var token_response = createTokenResponse(clientId, req.body.refresh_token);
+				var token_response = createTokenResponse(clientId, req.body.refresh_token, code.scope);
 				console.log('Issued tokens for code %s', req.body.code);
 
 				res.status(200).json(token_response);
@@ -338,7 +373,7 @@ app.post("/token", function(req, res){
 						res.status(400).json({error: 'invalid_grant'});
 						return;
 					} else {
-						var token_response = createTokenResponse(clientId, req.body.refresh_token);
+						var token_response = createTokenResponse(clientId, req.body.refresh_token, token.scope);
 						res.status(200).json(token_response);
 						return;
 					}

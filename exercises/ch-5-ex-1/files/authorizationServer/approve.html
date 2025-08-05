@@ -48,18 +48,21 @@
 		  <% if (client.logo_uri) { %>
 		  <p><b>logo:</b> <img src="<%- client.logo_uri %>" /></p>
 		  <% } %>
-		  
-		   <form class="form" action="/approve" method="POST">
+       <form class="form" action="/approve" method="POST">
 			   <input type="hidden" name="reqid" value="<%- reqid %>">
+			   <% if (scope) { %>
+			   <p>The client is requesting access to the following:</p>
+			   <ul>
+			   <% _.each(scope, function(s) { %>
+			   	  <li><input type="checkbox" name="scope_<%- s %>" id="scope_<%- s %>" checked="checked"> <label for="scope_<%- s %>"><%- s %></label></li>
+			   <% }); %>
+		       </ul>
+			   <% } %>
 			   <input type="submit" class="btn btn-success" name="approve" value="Approve">
 			   <input type="submit" class="btn btn-danger" name="deny" value="Deny">
 		   </form>
       </div>
-
     </div><!-- /.container -->
-
-	
-	
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
     <!-- Include all compiled plugins (below), or include individual files as needed -->

@@ -36,7 +36,7 @@ app.get('/', function (req, res) {
 app.get('/authorize', function(req, res){
 	access_token = null;
 	refresh_token = null;
-	scope = null;
+	scope = client.scope;
 	state = randomstring.generate();
 	
 	var authorizeUrl = url.parse(authServer.authorizationEndpoint, true);
