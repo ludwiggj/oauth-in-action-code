@@ -54,8 +54,33 @@ app.get('/tokens', function(req, res) {
 				return record.access_token && !record.refresh_token;
 			});
 			
+			// Filter to get refresh tokens (records that have refresh_token field but not access_token field)
+			var refreshTokens = allRecords.filter(function(record) {
+				return record.refresh_token && !record.access_token;
+			});
+			
 			var now = new Date();
 			var clientTokens = {};
+			var clientRefreshTokens = {};
+			
+			// Group refresh tokens by client_id
+			refreshTokens.forEach(function(token) {
+				var clientId = token.client_id || 'unknown';
+				
+				if (!clientRefreshTokens[clientId]) {
+					clientRefreshTokens[clientId] = {
+						tokens: []
+					};
+				}
+				
+				var refreshTokenInfo = {
+					refresh_token: token.refresh_token,
+					client_id: token.client_id,
+					scope: token.scope || 'No scope'
+				};
+				
+				clientRefreshTokens[clientId].tokens.push(refreshTokenInfo);
+			});
 			
 			// Group tokens by client_id and add status information
 			tokens.forEach(function(token) {
@@ -100,6 +125,7 @@ app.get('/tokens', function(req, res) {
 					client_id: token.client_id,
 					expires_at: token.expires_at ? new Date(token.expires_at).toLocaleString() : null,
 					issued_at: token.issued_at ? new Date(token.issued_at).toLocaleString() : null,
+					scope: token.scope || 'No scope',
 					is_expired: isExpired,
 					time_remaining: timeRemaining
 				};
@@ -127,6 +153,7 @@ app.get('/tokens', function(req, res) {
 			res.render('tokens', {
 				tokens: tokens,
 				clientTokens: clientTokens,
+				clientRefreshTokens: clientRefreshTokens,
 				now: now.toLocaleString()
 			});
 		});
@@ -163,6 +190,68 @@ app.post('/delete-token', function(req, res) {
 			
 			// Redirect back to the tokens page to show updated state
 			res.redirect('/tokens');
+		});
+	});
+});
+
+// Generate a new access token from a refresh token
+app.post('/generate-access-token', function(req, res) {
+	var refreshToken = req.body.refresh_token;
+	var clientId = req.body.client_id;
+	var requestedScope = req.body.scope;
+	
+	if (!refreshToken) {
+		console.log('No refresh token provided');
+		res.status(400).json({error: 'Missing refresh token'});
+		return;
+	}
+	
+	console.log('Generating access token from refresh token: %s', refreshToken);
+	
+	// Find the refresh token in the database
+	nosql.find().make(function(builder) {
+		builder.where('refresh_token', refreshToken);
+		builder.callback(function(err, records) {
+			if (err) {
+				console.log('Error finding refresh token:', err);
+				res.status(500).json({error: 'Database error'});
+				return;
+			}
+			
+			if (!records || records.length === 0) {
+				console.log('Refresh token not found');
+				res.status(404).json({error: 'Refresh token not found'});
+				return;
+			}
+			
+			var refreshTokenRecord = records[0];
+			
+			// Validate client_id matches
+			if (refreshTokenRecord.client_id !== clientId) {
+				console.log('Client ID mismatch');
+				res.status(400).json({error: 'Invalid client'});
+				return;
+			}
+			
+			// Validate requested scope is subset of original scope
+			var originalScopes = refreshTokenRecord.scope || [];
+			var requestedScopes = requestedScope ? requestedScope.split(' ') : [];
+			
+			var validScope = requestedScopes.every(function(scope) {
+				return originalScopes.indexOf(scope) !== -1;
+			});
+			
+			if (!validScope) {
+				console.log('Requested scope exceeds original scope');
+				res.status(400).json({error: 'Invalid scope'});
+				return;
+			}
+			
+			// Generate new access token
+			var token_response = createTokenResponse(clientId, refreshToken, requestedScopes);
+			
+			console.log('Generated new access token from refresh token');
+			res.json({success: true, token_response: token_response});
 		});
 	});
 });

@@ -49,11 +49,7 @@
     </nav>
 
     <div class="container">
-
-      <div class="jumbotron">
-        <h2>Access Tokens by Client</h2>
-        <p>This page shows all access tokens allocated to each client ID, including their expiration status.</p>
-      </div>
+    <h2>Access Tokens by Client</h2>
 
       <% if (tokens.length === 0) { %>
         <div class="alert alert-info">
@@ -77,6 +73,7 @@
                         <th>Token</th>
                         <th>Issued At</th>
                         <th>Expires At</th>
+                        <th>Scope</th>
                         <th>Status</th>
                         <th>Time Remaining</th>
                         <th>Actions</th>
@@ -88,6 +85,13 @@
                           <td><code><%- token.access_token %></code></td>
                           <td><%- token.issued_at || 'Unknown' %></td>
                           <td><%- token.expires_at || 'Never' %></td>
+                          <td>
+                            <% if (token.scope) { %>
+                              <span class="label label-info"><%- token.scope %></span>
+                            <% } else { %>
+                              <span class="text-muted">No scope</span>
+                            <% } %>
+                          </td>
                           <td>
                             <% if (token.is_expired) { %>
                               <span class="token-expired">EXPIRED</span>
@@ -134,6 +138,63 @@
         <% }); %>
       <% } %>
 
+      <!-- Refresh Tokens Section -->
+      <hr style="margin: 40px 0;">
+      <h2>Refresh Tokens by Client</h2>
+      
+      <% if (Object.keys(clientRefreshTokens).length === 0) { %>
+        <div class="alert alert-info">
+          <h4>No refresh tokens found</h4>
+          <p>No refresh tokens have been issued yet.</p>
+        </div>
+      <% } else { %>
+        <% _.each(clientRefreshTokens, function(clientData, clientId) { %>
+          <div class="panel panel-success">
+            <div class="panel-heading">
+              <h3 class="panel-title">Client ID: <code><%- clientId %></code></h3>
+            </div>
+            <div class="panel-body">
+              <% if (clientData.tokens.length === 0) { %>
+                <div class="alert alert-warning">
+                  <strong>No refresh tokens</strong> found for this client.
+                </div>
+              <% } else { %>
+                <div class="table-responsive">
+                  <table class="table table-striped table-hover">
+                    <thead>
+                      <tr>
+                        <th>Token ID</th>
+                        <th>Scope</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% _.each(clientData.tokens, function(token) { %>
+                        <tr>
+                          <td><code class="token-id"><%- token.refresh_token %></code></td>
+                          <td>
+                            <% if (token.scope === 'No scope') { %>
+                              <span class="text-muted"><%- token.scope %></span>
+                            <% } else { %>
+                              <span class="label label-info"><%- token.scope %></span>
+                            <% } %>
+                          </td>
+                          <td>
+                            <button type="button" class="btn btn-success btn-sm" onclick="showScopeModal('<%- token.refresh_token %>', '<%- token.client_id %>', '<%- token.scope %>')">
+                              <span class="glyphicon glyphicon-plus"></span> Generate Access Token
+                            </button>
+                          </td>
+                        </tr>
+                      <% }); %>
+                    </tbody>
+                  </table>
+                </div>
+              <% } %>
+            </div>
+          </div>
+        <% }); %>
+      <% } %>
+
       <div class="panel panel-info">
         <div class="panel-heading">
           <h3 class="panel-title">Actions</h3>
@@ -146,9 +207,113 @@
 
     </div><!-- /.container -->
 
+    <!-- Scope Selection Modal -->
+    <div class="modal fade" id="scopeModal" tabindex="-1" role="dialog" aria-labelledby="scopeModalLabel">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+            <h4 class="modal-title" id="scopeModalLabel">Generate Access Token</h4>
+          </div>
+          <div class="modal-body">
+            <p>Select the scopes for the new access token:</p>
+            <form id="scopeForm">
+              <input type="hidden" id="refreshToken" name="refresh_token" value="">
+              <input type="hidden" id="clientId" name="client_id" value="">
+              <div class="checkbox-group" id="scopeCheckboxes">
+                <!-- Scope checkboxes will be populated by JavaScript -->
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-success" onclick="generateAccessToken()">
+              <span class="glyphicon glyphicon-plus"></span> Generate Token
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
     <!-- Include all compiled plugins (below), or include individual files as needed -->
 	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+	
+	<script>
+	// Available scopes - you can modify this list as needed
+	var availableScopes = ['foo', 'bar'];
+	
+	function showScopeModal(refreshToken, clientId, currentScope) {
+		// Set hidden form values
+		document.getElementById('refreshToken').value = refreshToken;
+		document.getElementById('clientId').value = clientId;
+		
+		// Parse current scopes
+		var currentScopes = currentScope && currentScope !== 'No scope' ? currentScope.split(' ') : [];
+		
+		// Build checkbox list
+		var checkboxContainer = document.getElementById('scopeCheckboxes');
+		checkboxContainer.innerHTML = '';
+		
+		availableScopes.forEach(function(scope) {
+			var isChecked = currentScopes.indexOf(scope) !== -1;
+			var checkboxHtml = 
+				'<div class="checkbox">' +
+				'  <label>' +
+				'    <input type="checkbox" name="scopes" value="' + scope + '"' + (isChecked ? ' checked' : '') + '> ' +
+				'    ' + scope +
+				'  </label>' +
+				'</div>';
+			checkboxContainer.innerHTML += checkboxHtml;
+		});
+		
+		// Show the modal
+		$('#scopeModal').modal('show');
+	}
+	
+	function generateAccessToken() {
+		var refreshToken = document.getElementById('refreshToken').value;
+		var clientId = document.getElementById('clientId').value;
+		
+		// Get selected scopes
+		var selectedScopes = [];
+		var checkboxes = document.querySelectorAll('input[name="scopes"]:checked');
+		checkboxes.forEach(function(checkbox) {
+			selectedScopes.push(checkbox.value);
+		});
+		
+		// Prepare URL-encoded form data
+		var formData = 'refresh_token=' + encodeURIComponent(refreshToken) +
+		               '&client_id=' + encodeURIComponent(clientId) +
+		               '&scope=' + encodeURIComponent(selectedScopes.join(' '));
+		
+		// Send request to generate access token
+		fetch('/generate-access-token', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded'
+			},
+			body: formData
+		})
+		.then(function(response) {
+			if (response.ok) {
+				// Close modal and refresh page
+				$('#scopeModal').modal('hide');
+				window.location.reload();
+			} else {
+				return response.json().then(function(errorData) {
+					alert('Error generating access token: ' + (errorData.error || 'Unknown error'));
+				});
+			}
+		})
+		.catch(function(error) {
+			console.error('Error:', error);
+			alert('Error generating access token. Please try again.');
+		});
+	}
+	</script>
   </body>
 </html>
