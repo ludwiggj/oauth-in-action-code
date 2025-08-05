@@ -88,10 +88,7 @@ app.get('/tokens', function(req, res) {
 				
 				if (!clientTokens[clientId]) {
 					clientTokens[clientId] = {
-						tokens: [],
-						active_count: 0,
-						expired_count: 0,
-						total_count: 0
+						tokens: []
 					};
 				}
 				
@@ -131,13 +128,6 @@ app.get('/tokens', function(req, res) {
 				};
 				
 				clientTokens[clientId].tokens.push(tokenInfo);
-				clientTokens[clientId].total_count++;
-				
-				if (isExpired) {
-					clientTokens[clientId].expired_count++;
-				} else {
-					clientTokens[clientId].active_count++;
-				}
 			});
 			
 			// Sort tokens by expiration date within each client
