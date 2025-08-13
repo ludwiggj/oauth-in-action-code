@@ -132,10 +132,47 @@ app.get("/callback", function(req, res){
 		/*
 		 * Parse and validate the ID token
 		 */
+		if (body.id_token) {
+			userInfo = null;
+			id_token = null;
 		
-		res.render('index', {access_token: access_token, refresh_token: refresh_token, scope: scope});
+			console.log('Got ID token: %s', body.id_token);
+			
+			var pubKey = jose.KEYUTIL.getKey(rsaKey);
+			var tokenParts = body.id_token.split('.');
+			var payload = JSON.parse(base64url.decode(tokenParts[1]));
+			console.log('ID token payload: %s', JSON.stringify(payload, null, 2));
+			if (jose.jws.JWS.verify(body.id_token, pubKey, [rsaKey.alg])) {
+				if (payload.iss == 'http://localhost:9001') {
+					console.log('ID token issuer is valid');
+					if ((Array.isArray(payload.aud) && __.contains(payload.aud, client.client_id) || payload.aud == client.client_id)) {
+						console.log('ID token audience is valid');
+				
+						var now = Math.floor(Date.now() / 1000);
+				
+						if (payload.iat && payload.iat <= now) {
+							console.log('ID token issued at is valid');
+							if (payload.exp && payload.exp >= now) {
+								console.log('ID token expiration is valid');
+								id_token = payload;
+								console.log('ID token is valid: %s', body.id_token);
+							} else {
+								console.log('ID token expiration is invalid: %s', payload.exp);
+							}
+						} else {
+							console.log('ID token issued at is invalid: %s', payload.iat);
+						}
+					} else {
+						console.log('ID token audience is invalid: %s', payload.aud);
+					}
+				} else {
+					console.log('ID token issuer is invalid: %s', payload.iss);
+				}
+			}
+		}
+		
+		res.render('userinfo', {userInfo: userInfo, id_token: id_token});
 		return;
-
 	} else {
 		res.render('error', {error: 'Unable to fetch access token, server response: ' + tokRes.statusCode})
 		return;
@@ -177,7 +214,25 @@ app.get('/userinfo', function(req, res) {
 	/*
 	 * Call the UserInfo endpoint and store/display the results
 	 */
+	console.log('userinfo endpoint called');
+
+	var headers = {
+		'Authorization': 'Bearer ' + access_token
+	};
+
+	var resource = request('GET', authServer.userInfoEndpoint,
+		{headers: headers}
+	);
 	
+	if (resource.statusCode >= 200 && resource.statusCode < 300) {
+		var body = JSON.parse(resource.getBody());
+		userInfo = body;
+		res.render('userinfo', {userInfo: userInfo, id_token: id_token});
+		return;
+	} else {
+		res.render('error', {error: 'Server returned response code: ' + resource.statusCode});
+		return;
+	}
 });
 
 app.use('/', express.static('files/client'));
