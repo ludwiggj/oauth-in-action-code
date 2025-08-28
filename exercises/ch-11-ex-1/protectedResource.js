@@ -67,7 +67,24 @@ var getAccessToken = function(req, res, next) {
 	/*
 	 * Parse and validate the JWT here
 	 */
-				
+		
+	var tokenParts = inToken.split('.');
+	var payload = JSON.parse(base64url.decode(tokenParts[1]));
+
+	if (payload.iss == 'http://localhost:9001/') {
+		if (
+			(Array.isArray(payload.aud) && __.contains(payload.aud, 'http://localhost:9002/')) ||
+			payload.aud == 'http://localhost:9002/'
+		) {
+			var now = Math.floor(Date.now() / 1000);
+			if (payload.iat <= now) {
+				if (payload.exp >= now) {
+					req.access_token = payload;
+				}
+			}
+		}
+	}
+	
 	next();
 	return;
 	
